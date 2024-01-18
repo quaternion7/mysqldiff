@@ -223,7 +223,7 @@ sub _parse {
         }
 
         # if (/^(\S+)\s*(.*)/) {
-        if (/^`(.*)`(.*)/) {
+        if (/^(`[^`]+`)\s*(.*)/) {
             my ($field, $fdef) = ($1, $2);
             croak "definition for field '$field' duplicated in table '$self->{name}'\n"
                 if $self->{fields}{$field};
