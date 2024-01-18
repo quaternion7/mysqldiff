@@ -4,6 +4,12 @@ MySQL-Diff
 MySQL-Diff is a suite of Perl modules and accompanying CLI script
 `mysqldiff` for comparing the schemas of two MySQL/MariaDB databases.
 
+This Fork (Quaternion)
+---
+
+This fork was made so I can merge some pull requests made by the community but didn't get merged since the contributors don't seem to be active.
+Also some changes to fit my needs probably.
+
 Prerequisites
 -------------
 

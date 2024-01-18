@@ -156,7 +156,7 @@ sub is_auto_inc     { my $self = shift; return $_[0] && $self->{auto_inc}{$_[0]}
 sub _parse {
     my $self = shift;
 
-    $self->{def} =~ s/`([^`]+)`/$1/gs;  # later versions quote names
+    # $self->{def} =~ s/`([^`]+)`/$1/gs;  # later versions quote names
     $self->{def} =~ s/\n+/\n/;
     $self->{lines} = [ grep ! /^\s*$/, split /(?=^)/m, $self->{def} ];
     my @lines = @{$self->{lines}};
@@ -222,7 +222,8 @@ sub _parse {
             last;
         }
 
-        if (/^(\S+)\s*(.*)/) {
+        # if (/^(\S+)\s*(.*)/) {
+        if (/^`(.*)`(.*)/) {
             my ($field, $fdef) = ($1, $2);
             croak "definition for field '$field' duplicated in table '$self->{name}'\n"
                 if $self->{fields}{$field};
@@ -237,11 +238,26 @@ sub _parse {
         croak "unparsable line in definition for table '$self->{name}':\n$_";
     }
 
+    $self->{lines} = [ grep !/FOREIGN KEY/, grep ! /^\s*$/, split /(?=^)/m, $self->{def} ];
+
+    my @_lines = @{$self->{lines}};
+
+    for my $i (0 .. @_lines) {
+        my $lchar = unpack('A1', $_lines[$i]);
+        if($lchar eq ")"){
+            $_lines[$i-1] =~ s/,$//;
+        }
+    }
+
+    $self->{lines} = [ @_lines ];
+
     warn "table '$self->{name}' didn't have terminator\n"
         unless defined $self->{options};
 
     @lines = grep ! m{^/\*!40\d{3} .*? \*/;}, @lines;
     @lines = grep ! m{^(SET |DROP TABLE)}, @lines;
+
+    $self->{def} = join "", @{$self->{lines}};
 
     warn "table '$self->{name}' had trailing garbage:\n", join '', @lines
         if @lines;
