@@ -200,6 +200,7 @@ sub _diff_tables {
     my @changes = (
 	$self->_diff_foreign_key_drop(@_),
         $self->_diff_fields(@_),
+        $self->_diff_field_order(@_),
         $self->_diff_indices(@_),
         $self->_diff_primary_key(@_),
         $self->_diff_foreign_key_add(@_),
@@ -227,8 +228,9 @@ sub _diff_fields {
 
     my $fields1 = $table1->fields;
     my $fields2 = $table2->fields;
+    my $ifields2 = $table2->ifields;
 
-    return () unless $fields1 || $fields2;
+    return () unless $fields1 || $fields2 || $ifields2;
 
     my @changes;
   
@@ -244,23 +246,19 @@ sub _diff_fields {
                     }
                 }
                 if ($f1 ne $f2) {
-                    if (not $self->{opts}{tolerant} or 
-                        (($f1 !~ m/$f2\(\d+,\d+\)/) and
-                         ($f1 ne "$f2 DEFAULT '' NOT NULL") and
-                         ($f1 ne "$f2 NOT NULL") ))
-                    {
-                        debug(3,"field '$field' changed");
+                    debug(3,"field '$field' changed");
 
-                        my $change = "ALTER TABLE $name1 CHANGE COLUMN $field $field $f2;";
-                        $change .= " # was $f1" unless $self->{opts}{'no-old-defs'};
-                        $change .= "\n";
-                        push @changes, $change;
-                    }
+                    my $change = "ALTER TABLE $name1 CHANGE COLUMN $field $field $f2;";
+                    $change .= " # was $f1";
+                        # unless $self->{opts}{'no-old-defs'};
+                    $change .= "\n";
+                    push @changes, $change;
                 }
             } elsif (!$self->{opts}{'keep-old-columns'}) {
                 debug(3,"field '$field' removed");
                 my $change = "ALTER TABLE $name1 DROP COLUMN $field;";
-                $change .= " # was $fields1->{$field}" unless $self->{opts}{'no-old-defs'};
+                $change .= " # was $fields1->{$field}";
+                    # unless $self->{opts}{'no-old-defs'};
                 $change .= "\n";
                 push @changes, $change;
             }
@@ -268,20 +266,64 @@ sub _diff_fields {
     }
 
     if($fields2) {
-        for my $field (keys %$fields2) {
-            unless($fields1 && $fields1->{$field}) {
-                debug(3,"field '$field' added");
-                my $changes = "ALTER TABLE $name1 ADD COLUMN $field $fields2->{$field}";
-                if ($table2->is_auto_inc($field)) {
-                    if ($table2->isa_primary($field)) {
-                        $changes .= ' PRIMARY KEY';
-                    } elsif ($table2->is_unique($field)) {
-                        $changes .= ' UNIQUE KEY';
-                    }
+        # for my $field (keys %$fields2) {
+        #     unless($fields1 && $fields1->{$field}) {
+        #         debug(3,"field '$field' added");
+        #         my $changes = "ALTER TABLE $name1 ADD COLUMN $field $fields2->{$field}";
+        #         if ($table2->is_auto_inc($field)) {
+        #             if ($table2->isa_primary($field)) {
+        #                 $changes .= ' PRIMARY KEY';
+        #             } elsif ($table2->is_unique($field)) {
+        #                 $changes .= ' UNIQUE KEY';
+        #             }
+        #         }
+        #         push @changes, "$changes;\n";
+        #     }
+        # }
+        # Instead lets use ifields to maintain the order of the fields
+        for my $i (0 .. $#$ifields2) {
+            my $field = $ifields2->[$i];
+            next if exists $fields1->{$field};
+            debug(3,"field '$field' added");
+            my $changes = "ALTER TABLE $name1 ADD COLUMN $field $fields2->{$field}";
+            if ($table2->is_auto_inc($field)) {
+                if ($table2->isa_primary($field)) {
+                    $changes .= ' PRIMARY KEY';
+                } elsif ($table2->is_unique($field)) {
+                    $changes .= ' UNIQUE KEY';
                 }
-                push @changes, "$changes;\n";
             }
+            push @changes, "$changes;\n";
         }
+    }
+
+    return @changes;
+}
+
+sub _diff_field_order {
+    my ($self, $table1, $table2) = @_;
+
+    my $name1 = $table1->name();
+
+    my $ifields1 = $table1->ifields;
+    my $ifields2 = $table2->ifields;
+
+    return () unless $ifields1 || $ifields2;
+
+    my @changes;
+
+    my %pos1 = map { $ifields1->[$_] => $_ } 0 .. $#$ifields1;
+    my %pos2 = map { $ifields2->[$_] => $_ } 0 .. $#$ifields2;
+
+    for my $i (0 .. $#$ifields2) {
+        my $field = $ifields2->[$i];
+        next unless exists $pos1{$field};
+        next if $pos1{$field} == $pos2{$field};
+
+        my $prev_field = $i > 0 ? $ifields2->[$i - 1] : undef;
+        my $change = "ALTER TABLE $name1 CHANGE COLUMN $field $field " . $table2->fields->{$field};
+        $change .= $prev_field ? " AFTER $prev_field" : " FIRST";
+        push @changes, "$change;\n";
     }
 
     return @changes;
@@ -315,8 +357,8 @@ sub _diff_indices {
                                    $table2->is_fulltext($index) ? 'FULLTEXT INDEX' : 'INDEX';
 
                     my $changes = "ALTER TABLE $name1 DROP INDEX $index;";
-                    $changes .= " # was $old_type ($indices1->{$index})"
-                        unless $self->{opts}{'no-old-defs'};
+                    $changes .= " # was $old_type ($indices1->{$index})";
+                    #     unless $self->{opts}{'no-old-defs'};
                     $changes .= "\nALTER TABLE $name1 ADD $new_type $index ($indices2->{$index});\n";
                     push @changes, $changes;
                 }
@@ -325,8 +367,8 @@ sub _diff_indices {
                 my $auto = _check_for_auto_col($table2, $indices1->{$index}, 1) || '';
                 my $changes = $auto ? _index_auto_col($table1, $indices1->{$index}) : '';
                 $changes .= "ALTER TABLE $name1 DROP INDEX $index;";
-                $changes .= " # was $old_type ($indices1->{$index})"
-                    unless $self->{opts}{'no-old-defs'};
+                $changes .= " # was $old_type ($indices1->{$index})";
+                    # unless $self->{opts}{'no-old-defs'};
                 $changes .= "\n";
                 push @changes, $changes;
             }
@@ -366,7 +408,8 @@ sub _diff_primary_key {
         debug(3,"primary key '$primary1' dropped");
         my $changes = _index_auto_col($table2, $primary1);
         $changes .= "ALTER TABLE $name1 DROP PRIMARY KEY;";
-        $changes .= " # was $primary1" unless $self->{opts}{'no-old-defs'};
+        $changes .= " # was $primary1";
+            # unless $self->{opts}{'no-old-defs'};
         return ( "$changes\n" );
     }
 
@@ -381,7 +424,8 @@ sub _diff_primary_key {
         my $auto = _check_for_auto_col($table2, $primary1) || '';
         my $changes = $auto ? _index_auto_col($table2, $auto) : '';
         $changes .= "ALTER TABLE $name1 DROP PRIMARY KEY;";
-        $changes .= " # was $primary1" unless $self->{opts}{'no-old-defs'};
+        $changes .= " # was $primary1";
+            # unless $self->{opts}{'no-old-defs'};
         $changes .= "\nALTER TABLE $name1 ADD PRIMARY KEY $primary2;\n";
         $changes .= "ALTER TABLE $name1 DROP INDEX $auto;\n"    if($auto);
         push @changes, $changes;
@@ -411,15 +455,15 @@ sub _diff_foreign_key_drop {
                 {
                     debug(1,"foreign key '$fk' changed");
                     my $changes = "ALTER TABLE $name1 DROP FOREIGN KEY $fk;";
-                    $changes .= " # was CONSTRAINT $fk $fks1->{$fk}"
-                        unless $self->{opts}{'no-old-defs'};
+                    $changes .= " # was CONSTRAINT $fk $fks1->{$fk}";
+                        # unless $self->{opts}{'no-old-defs'};
                     push @changes, $changes;
                 }
             } else {
                 debug(1,"foreign key '$fk' removed");
                 my $changes .= "ALTER TABLE $name1 DROP FOREIGN KEY $fk;";
-                $changes .= " # was CONSTRAINT $fk $fks1->{$fk}"
-                        unless $self->{opts}{'no-old-defs'};
+                $changes .= " # was CONSTRAINT $fk $fks1->{$fk}";
+                        # unless $self->{opts}{'no-old-defs'};
                 $changes .= "\n";
                 push @changes, $changes;
             }
@@ -550,7 +594,8 @@ sub _diff_options {
 
     if ($options1 ne $options2) {
         my $change = "ALTER TABLE $name $options2;";
-        $change .= " # was " . ($options1 || 'blank') unless $self->{opts}{'no-old-defs'};
+        $change .= " # was " . ($options1 || 'blank');
+            # unless $self->{opts}{'no-old-defs'};
         $change .= "\n";
         push @changes, $change;
     }
