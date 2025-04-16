@@ -212,12 +212,22 @@ GetOptions(\%opts, "help|?", "debug|d:i", "apply|A", "batch-apply|B",
            "host|h=s", "port|P=s", "socket|s=s", "user|u=s", "password|p:s",
            "host1=s",  "port1=s",  "socket1=s",  "user1=s",  "password1:s",
            "host2=s",  "port2=s",  "socket2=s",  "user2=s",  "password2:s",
-           "tolerant|i", "single-transaction|S", "list-tables|l"
+           "tolerant|i", "single-transaction|S", "list-tables|l", "mariadb|M",
           ) or usage();
 
 usage() if (@ARGV != 2 or $opts{help});
 
 $opts{debug} ||= 0;
+
+my $db_cmd = $opts{mariadb} ? 'mariadb' : 'mysql';
+my $db_dump_cmd = $opts{mariadb} ? 'mariadb-dump' : 'mysqldump';
+my $db_show_cmd = $opts{mariadb} ? 'mariadb-show' : 'mysqlshow';
+
+print "DB Mode: $opts{mariadb} ? 'MariaDB' : 'MySQL'\n" if $opts{debug} > 0;
+
+$opts{db_cmd} = $db_cmd;
+$opts{db_dump_cmd} = $db_dump_cmd;
+$opts{db_show_cmd} = $db_show_cmd;
 
 my $md = MySQL::Diff->new(%opts);
 
@@ -254,6 +264,7 @@ Options:
   -t,  --table-re=REGEXP     restrict comparisons to tables matching REGEXP
   -i,  --tolerant            ignore DEFAULT, AUTO_INCREMENT, COLLATE, and formatting changes
   -S,  --single-transaction  perform DB dump in transaction
+  -M,  --mariadb             use mariadb suite of commands instead of mysql
 
   -h,  --host=...            connect to host
   -P,  --port=...            use this port for connection

@@ -71,6 +71,7 @@ sub new {
     $self->{_source}{dbh} = $p{dbh} if $p{dbh};
     $self->{'single-transaction'} = $p{'single-transaction'};
     $self->{'table-re'} = $p{'table-re'};
+    $self->{opts} = $p{auth}{opts} if $p{auth}{opts};
 
     if ($p{file}) {
         $self->_canonicalise_file($p{file});
@@ -176,9 +177,11 @@ Note that is used as a function call, not a method call.
 
 sub available_dbs {
     my %auth = @_;
+
     my $args_ref = _auth_args_string(%auth);
     # unshift @$args_ref, q{mysqlshow}; 
-    unshift @$args_ref, q{mariadb-show}; 
+    # unshift @$args_ref, q{mariadb-show}; 
+    unshift @$args_ref, $auth{opts}{db_show_cmd};
   
     # evil but we don't use DBI because I don't want to implement -p properly
     # not that this works with -p anyway ...
@@ -204,6 +207,8 @@ sub auth_args {
 sub _canonicalise_file {
     my ($self, $file) = @_;
 
+    my $db_cmd = $self->{opts}{db_cmd};
+
     $self->{_source}{file} = $file;
     debug(2,"fetching table defs from file $file");
 
@@ -219,7 +224,7 @@ sub _canonicalise_file {
   
     my $args = $self->{_source}{auth};
     # my $fh = IO::File->new("| mysql $args") or die "Couldn't execute 'mysql$args': $!\n";
-    my $fh = IO::File->new("| mariadb $args") or die "Couldn't execute 'mysql$args': $!\n";
+    my $fh = IO::File->new("| $db_cmd $args") or die "Couldn't execute '$db_cmd $args': $!\n";
     print $fh "\nCREATE DATABASE \`$temp_db\`;\nUSE \`$temp_db\`;\n";
     print $fh $defs;
     $fh->close;
@@ -230,7 +235,7 @@ sub _canonicalise_file {
 
     debug(3,"dropping temporary database $temp_db");
     # $fh = IO::File->new("| mysql $args") or die "Couldn't execute 'mysql$args': $!\n";
-    $fh = IO::File->new("| mariadb $args") or die "Couldn't execute 'mysql$args': $!\n";
+    $fh = IO::File->new("| $db_cmd $args") or die "Couldn't execute '$db_cmd $args': $!\n";
     print $fh "DROP DATABASE \`$temp_db\`;\n";
     $fh->close;
 }
@@ -259,15 +264,17 @@ sub _get_tables_in_db {
 
     my $args = $self->{_source}{auth};
 
+    my $db_show_cmd = $self->{opts}{db_show_cmd};
+
     # evil but we don't use DBI because I don't want to implement -p properly
     # not that this works with -p anyway ...
     # my $fh = IO::File->new("mysqlshow $args $db|")
       # or die "Couldn't execute 'mysqlshow $args $db': $!\n";
-    my $fh = IO::File->new("mariadb-show $args $db|")
-      or die "Couldn't execute 'mariadb-show $args $db': $!\n";
+    my $fh = IO::File->new("$db_show_cmd $args $db|")
+      or die "Couldn't execute '$db_show_cmd $args $db': $!\n";
     my $tables_ref = _parse_mysqlshow_from_fh_into_arrayref($fh);
     # $fh->close() or die "mysqlshow $args $db failed: $!";
-    $fh->close() or die "mariadb-show $args $db failed: $!";
+    $fh->close() or die "$db_show_cmd $args $db failed: $!";
 
     return $tables_ref;
 }
@@ -288,6 +295,8 @@ sub _parse_mysqlshow_from_fh_into_arrayref {
 sub _get_defs {
     my ( $self, $db ) = @_;
 
+    my $db_dump_cmd = $self->{opts}{db_dump_cmd};
+
     my $args   = $self->{_source}{auth};
     my $single_transaction = $self->{'single-transaction'} ? "--single-transaction" : "";
     my $dump_opts = "--no-data --compact --skip-opt";
@@ -302,17 +311,17 @@ sub _get_defs {
 
     # my $fh = IO::File->new("mysqldump -d $single_transaction $args $db $tables 2>&1 |")
     #   or die "Couldn't read ${db}'s table defs via mysqldump: $!\n";
-    my $fh = IO::File->new("mariadb-dump -d $single_transaction $dump_opts $args $db $tables 2>&1 |")
-      or die "Couldn't read ${db}'s table defs via mariadb-dump $!\n";
+    my $fh = IO::File->new("$db_dump_cmd -d $single_transaction $dump_opts $args $db $tables 2>&1 |")
+      or die "Couldn't read ${db}'s table defs via $db_dump_cmd $!\n";
 
     # debug( 3, "running mysqldump -d $single_transaction $args $db $tables" );
-    debug( 3, "running mariadb-dump -d $single_transaction $dump_opts $args $db $tables" );
+    debug( 3, "running $db_dump_cmd -d $single_transaction $dump_opts $args $db $tables" );
     my $defs = $self->{_defs} = [<$fh>];
     $fh->close;
     my $exit_status = $? >> 8;
 
     # if ( grep /mysqldump: Got error: .*: Unknown database/, @$defs ) {
-    if ( grep /mariadb-dump Got error: .*: Unknown database/, @$defs ) {
+    if ( grep /$db_dump_cmd Got error: .*: Unknown database/, @$defs ) {
         die <<EOF;
 Failed to create temporary database $db
 during canonicalization.  Make sure that your mysql.db table has a row
@@ -323,7 +332,7 @@ EOF
         # If mysqldump exited with a non-zero status, then
         # we can not reliably make a diff, so better to die and bubble that error up.
         # die "mysqldump failed. Exit status: $exit_status:\n" . join( "\n", @{$defs} );
-        die "mariadb-dump failed. Exit status: $exit_status:\n" . join( "\n", @{$defs} );
+        die "$db_dump_cmd failed. Exit status: $exit_status:\n" . join( "\n", @{$defs} );
     }
     return;
 }

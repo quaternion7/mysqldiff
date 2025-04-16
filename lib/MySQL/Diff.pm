@@ -613,6 +613,7 @@ sub _load_database {
         $auth{$auth} = $self->{opts}{"$auth$authnum"} || $self->{opts}{$auth};
         delete $auth{$auth} unless $auth{$auth};
     }
+    $auth{opts} = $self->{opts};
 
     if ($arg =~ /^db:(.*)/) {
         return MySQL::Diff::Database->new(db => $1, auth => \%auth, 'single-transaction' => $self->{opts}{'single-transaction'}, 'table-re' => $self->{opts}{'table-re'});
