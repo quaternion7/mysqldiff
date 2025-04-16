@@ -13,6 +13,7 @@ MySQL::Diff::Table - Table Definition Class
   my $name          = $db->name();
   my $field         = $db->field();
   my $fields        = $db->fields();                # %$fields
+  my $ifields       = $db->ifields();               # %$ifields (indexed fields to preserve order)
   my $primary_key   = $db->primary_key();
   my $indices       = $db->indices();               # %$indices
   my $options       = $db->options();
@@ -93,6 +94,10 @@ Returns the current field definition of the given field.
 
 Returns an array reference to a list of fields.
 
+=item * ifields
+
+Returns an array reference to a list of indexed fields.
+
 =item * primary_key
 
 Returns a hash reference to fields used as primary key fields.
@@ -138,6 +143,7 @@ sub def             { my $self = shift; return $self->{def};            }
 sub name            { my $self = shift; return $self->{name};           }
 sub field           { my $self = shift; return $self->{fields}{$_[0]};  }
 sub fields          { my $self = shift; return $self->{fields};         }
+sub ifields         { my $self = shift; return $self->{ifields};        }
 sub primary_key     { my $self = shift; return $self->{primary_key};    }
 sub indices         { my $self = shift; return $self->{indices};        }
 sub options         { my $self = shift; return $self->{options};        }
@@ -228,6 +234,7 @@ sub _parse {
             croak "definition for field '$field' duplicated in table '$self->{name}'\n"
                 if $self->{fields}{$field};
             $self->{fields}{$field} = $fdef;
+            push @{$self->{ifields}}, $field;
             debug(4,"got field def '$field': $fdef");
             next unless $fdef =~ /\s+AUTO_INCREMENT\b/;
             $self->{auto_inc}{$field} = 1;
