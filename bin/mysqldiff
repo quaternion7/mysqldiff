@@ -204,6 +204,7 @@ use Getopt::Long qw(:config no_ignore_case);
 use IO::File;
 use String::ShellQuote qw(shell_quote);
 use MySQL::Diff;
+use MySQL::Diff::Utils qw(debug);
 
 my %opts = ();
 GetOptions(\%opts, "help|?", "debug|d:i", "apply|A", "batch-apply|B",
@@ -223,7 +224,11 @@ my $db_cmd = $opts{mariadb} ? 'mariadb' : 'mysql';
 my $db_dump_cmd = $opts{mariadb} ? 'mariadb-dump' : 'mysqldump';
 my $db_show_cmd = $opts{mariadb} ? 'mariadb-show' : 'mysqlshow';
 
-print "DB Mode: $opts{mariadb} ? 'MariaDB' : 'MySQL'\n" if $opts{debug} > 0;
+if ($opts{mariadb}) {
+    debug(1,"Using MariaDB commands (mariadb, mariadb-dump, mariadb-show)");
+} else {
+    debug(1,"Using MySQL commands (mysql, mysqldump, mysqlshow)");
+}
 
 $opts{db_cmd} = $db_cmd;
 $opts{db_dump_cmd} = $db_dump_cmd;
