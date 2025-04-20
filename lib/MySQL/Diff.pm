@@ -264,21 +264,6 @@ sub _diff_fields {
     }
 
     if($fields2) {
-        # for my $field (keys %$fields2) {
-        #     unless($fields1 && $fields1->{$field}) {
-        #         debug(3,"field '$field' added");
-        #         my $changes = "ALTER TABLE $name1 ADD COLUMN $field $fields2->{$field}";
-        #         if ($table2->is_auto_inc($field)) {
-        #             if ($table2->isa_primary($field)) {
-        #                 $changes .= ' PRIMARY KEY';
-        #             } elsif ($table2->is_unique($field)) {
-        #                 $changes .= ' UNIQUE KEY';
-        #             }
-        #         }
-        #         push @changes, "$changes;\n";
-        #     }
-        # }
-        # Instead lets use ifields to maintain the order of the fields
         for my $i (0 .. $#$ifields2) {
             my $field = $ifields2->[$i];
             next if exists $fields1->{$field};
@@ -321,8 +306,9 @@ sub _diff_field_order {
         my $prev_field = $i > 0 ? $ifields2->[$i - 1] : undef;
         my $change = "ALTER TABLE $name1 CHANGE COLUMN $field $field " . $table2->fields->{$field};
         $change .= $prev_field ? " AFTER $prev_field" : " FIRST";
+        $change .= ";";
         $change .= " # column moved from position $pos1{$field} to $i" unless $self->{opts}{'no-old-defs'};
-        push @changes, "$change;\n";
+        push @changes, "$change\n";
     }
 
     return @changes;
