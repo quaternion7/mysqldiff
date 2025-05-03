@@ -564,11 +564,11 @@ sub _diff_options {
 
     my @changes;
 
-    if ($self->{opts}{tolerant}) {
-      for ($options1, $options2) {
+    for ($options1, $options2) {
         s/ AUTO_INCREMENT=\d+//gi;
-        s/ COLLATE=[\w_]+//gi;
-      }
+        if ($self->{opts}{tolerant}) {
+            s/ COLLATE=[\w_]+//gi;
+        }
     }
 
     if ($options1 ne $options2) {

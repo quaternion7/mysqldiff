@@ -299,7 +299,7 @@ sub _get_defs {
 
     my $args   = $self->{_source}{auth};
     my $single_transaction = $self->{'single-transaction'} ? "--single-transaction" : "";
-    my $dump_opts = "--no-data --compact --skip-opt --skip-triggers";
+    my $dump_opts = "--no-data --compact --skip-opt --create-options --skip-triggers";
     my $tables = '';                       #dump all tables by default
     if ( my $table_re = $self->{'table-re'} ) {
         $tables = $self->_get_tables_to_dump($db);
