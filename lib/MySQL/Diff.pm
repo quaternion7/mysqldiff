@@ -198,11 +198,12 @@ EOF
 sub _diff_tables {
     my $self = shift;
     my @changes = (
-	$self->_diff_foreign_key_drop(@_),
+        $self->_diff_foreign_key_drop(@_),
+        $self->_diff_indices_drop(@_),
         $self->_diff_fields(@_),
         $self->_diff_field_order(@_),
-        $self->_diff_indices(@_),
         $self->_diff_primary_key(@_),
+        $self->_diff_indices_add(@_),
         $self->_diff_foreign_key_add(@_),
         $self->_diff_options(@_)        
     );
@@ -314,53 +315,70 @@ sub _diff_field_order {
     return @changes;
 }
 
-sub _diff_indices {
+sub _diff_indices_drop {
     my ($self, $table1, $table2) = @_;
 
     my $name1 = $table1->name();
-
     my $indices1 = $table1->indices();
     my $indices2 = $table2->indices();
 
-    return () unless $indices1 || $indices2;
+    return () unless $indices1;
 
     my @changes;
 
-    if($indices1) {
-        for my $index (keys %$indices1) {
-            debug(3,"table1 had index '$index'");
-            my $old_type = $table1->is_unique($index) ? 'UNIQUE' : 
-                           $table1->is_fulltext($index) ? 'FULLTEXT INDEX' : 'INDEX';
+    for my $index (keys %$indices1) {
+        debug(3,"table1 had index '$index'");
+        my $old_type = $table1->is_unique($index) ? 'UNIQUE' : 
+                       $table1->is_fulltext($index) ? 'FULLTEXT INDEX' : 'INDEX';
 
-            if ($indices2 && $indices2->{$index}) {
-                if( ($indices1->{$index} ne $indices2->{$index}) or
-                    ($table1->is_unique($index) xor $table2->is_unique($index)) or
-                    ($table1->is_fulltext($index) xor $table2->is_fulltext($index)) )
-                {
-                    debug(3,"index '$index' changed");
-                    my $new_type = $table2->is_unique($index) ? 'UNIQUE' : 
-                                   $table2->is_fulltext($index) ? 'FULLTEXT INDEX' : 'INDEX';
-
-                    my $changes = "ALTER TABLE $name1 DROP INDEX $index;";
-                    $changes .= " # was $old_type ($indices1->{$index})" unless $self->{opts}{'no-old-defs'};
-                    $changes .= "\nALTER TABLE $name1 ADD $new_type $index ($indices2->{$index});\n";
-                    push @changes, $changes;
-                }
-            } else {
-                debug(3,"index '$index' removed");
-                my $auto = _check_for_auto_col($table2, $indices1->{$index}, 1) || '';
-                my $changes = $auto ? _index_auto_col($table1, $indices1->{$index}) : '';
-                $changes .= "ALTER TABLE $name1 DROP INDEX $index;";
+        if ($indices2 && $indices2->{$index}) {
+            if( ($indices1->{$index} ne $indices2->{$index}) or
+                ($table1->is_unique($index) xor $table2->is_unique($index)) or
+                ($table1->is_fulltext($index) xor $table2->is_fulltext($index)) )
+            {
+                debug(3,"index '$index' changed");
+                my $changes = "ALTER TABLE $name1 DROP INDEX $index;";
                 $changes .= " # was $old_type ($indices1->{$index})" unless $self->{opts}{'no-old-defs'};
                 $changes .= "\n";
                 push @changes, $changes;
             }
+        } else {
+            debug(3,"index '$index' removed");
+            my $auto = _check_for_auto_col($table2, $indices1->{$index}, 1) || '';
+            my $changes = $auto ? _index_auto_col($table1, $indices1->{$index}) : '';
+            $changes .= "ALTER TABLE $name1 DROP INDEX $index;";
+            $changes .= " # was $old_type ($indices1->{$index})" unless $self->{opts}{'no-old-defs'};
+            $changes .= "\n";
+            push @changes, $changes;
         }
     }
 
-    if($indices2) {
-        for my $index (keys %$indices2) {
-            next if($indices1 && $indices1->{$index});
+    return @changes;
+}
+
+sub _diff_indices_add {
+    my ($self, $table1, $table2) = @_;
+
+    my $name1 = $table1->name();
+    my $indices1 = $table1->indices();
+    my $indices2 = $table2->indices();
+
+    return () unless $indices2;
+
+    my @changes;
+
+    for my $index (keys %$indices2) {
+        next if($indices1 && $indices1->{$index} && 
+               ($indices1->{$index} eq $indices2->{$index}) &&
+               ($table1->is_unique($index) == $table2->is_unique($index)) &&
+               ($table1->is_fulltext($index) == $table2->is_fulltext($index)));
+
+        if ($indices1 && $indices1->{$index}) {
+            debug(3,"index '$index' changed - adding new version");
+            my $new_type = $table2->is_unique($index) ? 'UNIQUE' : 
+                           $table2->is_fulltext($index) ? 'FULLTEXT INDEX' : 'INDEX';
+            push @changes, "ALTER TABLE $name1 ADD $new_type $index ($indices2->{$index});\n";
+        } else {
             next if(
                 !$table2->isa_primary($index) &&
                 $table2->is_unique($index) &&
